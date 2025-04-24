@@ -16,7 +16,10 @@ Primero necesito saber:
 """)
 
 edad = st.number_input("¿Cuántos años tienes?", min_value=5, max_value=14, step=1)
-materia = st.selectbox("Elige una materia para aprender hoy:", ["Ciencias", "Matemáticas", "Español", "Inglés", "Religión"])
+materia = st.selectbox("Elige una materia para aprender hoy:", [
+    "Ciencias", "Matemáticas", "Español", "Inglés", "Religión",
+    "Historia", "Tecnología", "Arte", "Ética", "Música"
+])
 tema = st.text_input("¿Qué tema estás viendo en clase?")
 
 if st.button("¡Explícame el tema!") and tema:
