@@ -4,7 +4,7 @@ from gemini_api import explicar_tema, generar_preguntas, evaluar_respuesta, resp
 import pyttsx3
 
 st.set_page_config(page_title="IAprendo – Tu tutor IA educativo", layout="centered")
-st.title("Bienvenido a IAprendo")
+st.title("🤖 Bienvenido a IAprendo")
 
 st.image("Imagen_IAprendo.png", width=200)
 
@@ -49,8 +49,12 @@ if st.session_state.get("tema_listo"):
     st.subheader("🎯 ¡Hora de poner en práctica lo aprendido!")
 
     if st.button("Iniciar actividad interactiva"):
-        st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
-        st.session_state.respuestas = [""] * len(st.session_state.preguntas)
+        preguntas_opciones = generar_preguntas(materia, tema, edad)
+        if preguntas_opciones and len(preguntas_opciones) == 2:
+            st.session_state.preguntas, st.session_state.opciones = preguntas_opciones
+            st.session_state.respuestas = [""] * len(st.session_state.preguntas)
+        else:
+            st.error("Lo siento, no se pudieron generar preguntas en este momento.")
 
 if "preguntas" in st.session_state and "opciones" in st.session_state:
     for i, (pregunta, opciones) in enumerate(zip(st.session_state.preguntas, st.session_state.opciones)):
