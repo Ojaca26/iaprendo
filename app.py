@@ -4,12 +4,12 @@ from gemini_api import explicar_tema, generar_preguntas, evaluar_respuesta, resp
 import pyttsx3
 
 st.set_page_config(page_title="IAprendo – Tu tutor IA educativo", layout="centered")
-st.title("🤖 Bienvenido a IAprendo")
+st.title("Bienvenidos a IAprendo")
 
-st.image("Imagen_IAprendo.png", width=200)
+st.image("imagen_materias.png", width=700)
 
 st.markdown("""
-### 👋 ¡Hola! Soy **IAprendo**, tu profe robot educativo
+### 👋 ¡Hola! Soy **IAprendo**, tu profe robot educativo 🤖
 Estoy aquí para explicarte los temas de clase de una forma divertida, fácil y con dibujos 🧠🎨
 
 Primero necesito saber:
@@ -18,9 +18,12 @@ Primero necesito saber:
 edad = st.number_input("¿Cuántos años tienes?", min_value=5, max_value=14, step=1)
 materia = st.selectbox("Elige una materia para aprender hoy:", [
     "Ciencias", "Matemáticas", "Español", "Inglés", "Religión",
-    "Historia", "Tecnología", "Arte", "Ética", "Música"
+    "Historia", "Tecnología", "Arte", "Ética", "Música", "Deportes"
 ])
 tema = st.text_input("¿Qué tema estás viendo en clase?")
+
+def obtener_imagen_del_tema(tema):
+    return f"https://source.unsplash.com/featured/?{tema.replace(' ', '%20')}"
 
 if st.button("¡Explícame el tema!") and tema:
     explicacion, imagen_url = explicar_tema(materia, tema, edad)
@@ -30,7 +33,9 @@ if st.button("¡Explícame el tema!") and tema:
 if st.session_state.get("tema_listo"):
     st.markdown("### 📘 Respuesta de IAprendo")
     st.write(st.session_state.explicacion)
-    st.image(f"https://source.unsplash.com/featured/?{tema},educacion,niños", caption=f"Imagen educativa sobre: {tema}")
+
+    imagen_url = obtener_imagen_del_tema(tema)
+    st.image(imagen_url, caption=f"Imagen educativa sobre: {tema}")
 
     if st.button("🔊 Leer en voz alta"):
         engine = pyttsx3.init()
@@ -49,12 +54,8 @@ if st.session_state.get("tema_listo"):
     st.subheader("🎯 ¡Hora de poner en práctica lo aprendido!")
 
     if st.button("Iniciar actividad interactiva"):
-        preguntas_opciones = generar_preguntas(materia, tema, edad)
-        if preguntas_opciones and len(preguntas_opciones) == 2:
-            st.session_state.preguntas, st.session_state.opciones = preguntas_opciones
-            st.session_state.respuestas = [""] * len(st.session_state.preguntas)
-        else:
-            st.error("Lo siento, no se pudieron generar preguntas en este momento.")
+        st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
+        st.session_state.respuestas = [""] * len(st.session_state.preguntas)
 
 if "preguntas" in st.session_state and "opciones" in st.session_state:
     for i, (pregunta, opciones) in enumerate(zip(st.session_state.preguntas, st.session_state.opciones)):
