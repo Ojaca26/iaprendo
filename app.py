@@ -17,18 +17,18 @@ Estoy aquí para explicarte los temas de clase de una forma divertida, fácil y 
 Primero necesito saber:
 """)
 
-# --- Nuevas preguntas ---
+# --- Datos del niño ---
 nombre = st.text_input("🎓 ¿Cómo te llamas?") or "Explorador"
 edad = st.number_input("👶 ¿Cuántos años tienes?", min_value=5, max_value=14, step=1)
 materia = st.selectbox("📈 Elige una materia para aprender hoy:", [
     "Ciencias", "Matemáticas", "Español", "Inglés", "Religión",
-    "Historia", "Tecnología", "Arte", "Ética", "Música", "Deportes"
+    "Historia", "Tecnología", "Arte", "Sociales", "Música", "Deportes"
 ])
 tema = st.text_input("🌍 ¿Qué tema estás viendo en clase?")
 
 # --- Explicación del tema ---
 if st.button("¡Explícame el tema!") and tema:
-    explicacion = explicar_tema(materia, tema, edad)
+    explicacion = explicar_tema(nombre, materia, tema, edad)
     st.session_state.explicacion = explicacion
     st.session_state.tema_listo = True
 
@@ -36,30 +36,33 @@ if st.session_state.get("tema_listo"):
     st.markdown(f"### 📚 Hola **{nombre}**, aquí está la explicación:")
     st.write(st.session_state.explicacion)
 
-    if st.button("🔊 Leer en voz alta"):
-        tts = gTTS(text=st.session_state.explicacion, lang="es", slow=False)
-        audio_fp = io.BytesIO()
-        tts.write_to_fp(audio_fp)
-        audio_fp.seek(0)
-        st.audio(audio_fp, format="audio/mp3")
+    # Reproducir voz si está en local
+    if os.getenv("LOCAL_ENV") == "1":
+        if st.button("🔊 Leer en voz alta"):
+            tts = gTTS(text=st.session_state.explicacion, lang="es", slow=False)
+            audio_fp = io.BytesIO()
+            tts.write_to_fp(audio_fp)
+            audio_fp.seek(0)
+            st.audio(audio_fp, format="audio/mp3")
+            st.info("🎧 Si quieres, puedes acelerar el audio desde el reproductor (por ejemplo, a velocidad 1.25x). ¡Tú decides!")
 
     st.markdown("---")
     st.subheader("💬 ¡Hazme una pregunta si quieres saber más!")
-    duda = st.text_input("🚶‍♂️ Escribe tu duda aquí:")
+    duda = st.text_input("👫 Escribe tu duda aquí:")
     if st.button("Responder duda") and duda:
-        respuesta = responder_duda(duda, tema, materia, edad)
+        respuesta = responder_duda(nombre, duda, tema, materia, edad)
         st.success(respuesta)
 
     st.markdown("---")
     st.subheader("🏆 ¡Reto de 7 preguntas para demostrar lo aprendido!")
 
     if st.button("🚀 Iniciar Reto Interactivo"):
-        with st.spinner('⏳ Estoy preparando tus preguntas, un momento por favor...'):
-            st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
-            st.session_state.respuestas = [""] * len(st.session_state.preguntas)
+        with st.spinner("⏳ Estoy preparando tus preguntas, un momento por favor..."):
+            st.session_state.preguntas, st.session_state.respuestas_correctas = generar_preguntas(materia, tema, edad)
+            st.session_state.respuestas_usuario = [""] * len(st.session_state.preguntas)
             st.session_state.reto_en_progreso = True
 
-# --- Validar reto ---
+# --- Reto en progreso ---
 if st.session_state.get("reto_en_progreso"):
     if not st.session_state.preguntas:
         st.error("⚠️ No se pudieron generar preguntas. Intenta de nuevo o cambia el tema.")
@@ -68,32 +71,40 @@ if st.session_state.get("reto_en_progreso"):
         st.success("✅ ¡Preguntas generadas! ¡Mucha suerte!")
 
         st.markdown("### 🖋️ Responde las siguientes preguntas:")
-        for i, (pregunta, opciones) in enumerate(zip(st.session_state.preguntas, st.session_state.opciones)):
+        for i, pregunta in enumerate(st.session_state.preguntas):
             st.markdown(f"**{i+1}. {pregunta}**")
-            st.session_state.respuestas[i] = st.radio("", opciones, key=f"pregunta_{i}")
-
-        if st.button("Evaluar mis respuestas"):
-            resultado = evaluar_respuestas(
-                st.session_state.preguntas,
-                st.session_state.respuestas,
-                tema, materia, edad
+            st.session_state.respuestas_usuario[i] = st.radio(
+                "Selecciona una opción:",
+                ["Sí", "No"],
+                key=f"pregunta_{i}"
             )
 
-            st.markdown("### 📝 Resultado del Reto")
-            st.write(resultado)
+        if st.button("Evaluar mis respuestas"):
+            respuestas_correctas = 0
 
-            correctas = sum(1 for r in st.session_state.respuestas if "*" in r)
+            for resp_usuario, resp_correcta in zip(st.session_state.respuestas_usuario, st.session_state.respuestas_correctas):
+                if resp_usuario.strip().lower() == resp_correcta.strip().lower():
+                    respuestas_correctas += 1
 
-            st.markdown("---")
-            st.subheader("🏅 Resultado Final:")
+            st.markdown("### 📜 Resultado del Reto")
+            st.success(f"Respondiste correctamente {respuestas_correctas} de 7 preguntas.")
 
-            if correctas >= 6:
-                st.success(f"🌟🌟🌟 ¡Excelente {nombre}! Respondiste {correctas} de 7 correctamente. ¡Eres un campeón!")
-            elif correctas >= 4:
-                st.success(f"🌟🌟 Muy bien {nombre}! Respondiste {correctas} de 7 correctamente. ¡Sigue así!")
-            elif correctas >= 1:
-                st.info(f"🌟 Buen intento {nombre}. Respondiste {correctas} de 7 correctamente. ¡Podemos reforzar juntos!")
+            if respuestas_correctas >= 6:
+                st.success(f"🌟🌟🌟 ¡Excelente {nombre}! ¡Eres un campeón!")
+            elif respuestas_correctas >= 4:
+                st.info(f"🌟🌟 Muy bien {nombre}, sigue esforzándote.")
             else:
-                st.warning(f"😅 No te preocupes {nombre}, ¡vamos a aprender juntos desde el principio!")
+                st.warning(f"😅 No te preocupes {nombre}, vamos a reforzar un poco más.")
+
+            # Activar plan de refuerzo si tuvo menos de 7 aciertos
+            if respuestas_correctas < 7:
+                plan_refuerzo = evaluar_respuestas(
+                    st.session_state.preguntas,
+                    st.session_state.respuestas_usuario,
+                    tema, materia, edad
+                )
+                st.markdown("---")
+                st.subheader("📊 Plan de Refuerzo Personalizado")
+                st.info(plan_refuerzo)
 
             st.session_state.reto_en_progreso = False
