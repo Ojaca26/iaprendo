@@ -1,6 +1,8 @@
 # app.py
 import streamlit as st
+from gtts import gTTS
 from gemini_api import explicar_tema, generar_preguntas, evaluar_respuestas, responder_duda
+import io
 import os
 
 st.set_page_config(page_title="IAprendo – Tu tutor IA educativo", layout="centered")
@@ -34,14 +36,12 @@ if st.session_state.get("tema_listo"):
     st.markdown(f"### 📚 Hola **{nombre}**, aquí está la explicación:")
     st.write(st.session_state.explicacion)
 
-    # Solo mostrar "Leer en voz alta" si está en local
-    if os.getenv("LOCAL_ENV") == "1":
-        if st.button("🎵 Leer en voz alta"):
-            import pyttsx3
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 150)
-            engine.say(st.session_state.explicacion)
-            engine.runAndWait()
+    if st.button("🔊 Leer en voz alta"):
+        tts = gTTS(text=st.session_state.explicacion, lang="es", slow=False)
+        audio_fp = io.BytesIO()
+        tts.write_to_fp(audio_fp)
+        audio_fp.seek(0)
+        st.audio(audio_fp, format="audio/mp3")
 
     st.markdown("---")
     st.subheader("💬 ¡Hazme una pregunta si quieres saber más!")
