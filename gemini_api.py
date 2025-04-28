@@ -18,46 +18,47 @@ para niños sobre el tema.
     return response.text.strip()
 
 def generar_preguntas(materia, tema, edad):
-    prompt = f"""
+    prompt_base = f"""
 Crea 7 preguntas tipo test sobre el tema '{tema}' de la materia {materia} para un niño de {edad} años.
-Cada pregunta debe tener 3 opciones (a, b, c). La opción correcta debe ir marcada con un asterisco (*).
-Devuélvelo en un JSON válido como lista de objetos:
+Cada pregunta debe tener 3 opciones (a, b, c). Marca la correcta agregando un asterisco (*) después de la opción correcta.
+Ejemplo de respuesta esperada en JSON:
 [
-  {{"pregunta": "¿...?"," "opciones": ["a) ...", "b) ...", "c) ..."], "respuesta_correcta": "a"}}
+  {{"pregunta": "¿Qué planeta es conocido como el planeta rojo?", "opciones": ["a) Marte*", "b) Venus", "c) Júpiter"]}},
+  {{"pregunta": "¿Cuál es el hueso más largo del cuerpo humano?", "opciones": ["a) Cráneo", "b) Fémur*", "c) Tibia"]}}
 ]
-No expliques nada más, solo el JSON.
+No expliques nada, solo devuelve el JSON.
 """
+
     model = genai.GenerativeModel(model_name="models/gemini-2.5-pro-preview-03-25")
-    response = model.generate_content(prompt)
 
-    texto = response.text.strip()
+    for intento in range(3):  # Hasta 3 intentos
+        try:
+            response = model.generate_content(prompt_base)
+            texto = response.text.strip()
 
-    # Limpiar si viene dentro de ```
-    if texto.startswith("```"):
-        partes = texto.split("```")
-        texto = "".join(p for p in partes if not p.strip().startswith("json") and not p.strip().startswith("python")).strip()
+            # 💥 Limpiar si viene dentro de ``` bloques
+            if "```" in texto:
+                partes = texto.split("```")
+                texto = "".join(p for p in partes if not p.strip().startswith("json") and not p.strip().startswith("python")).strip()
 
-    try:
-        # Buscar solo el primer JSON dentro del texto
-        match = re.search(r"\[\s*{.*?}\s*\]", texto, re.DOTALL)
-        if match:
-            json_text = match.group()
-            preguntas_json = json.loads(json_text)
-        else:
-            preguntas_json = []
-            print(f"⚠️ No se encontró un JSON válido en la respuesta:\n{texto}")
-    except Exception as e:
-        preguntas_json = []
-        print(f"⚠️ Error cargando preguntas JSON: {e}\nContenido recibido:\n{texto}")
+            preguntas_json = json.loads(texto)
 
-    preguntas = []
-    opciones = []
+            # Validar estructura
+            if isinstance(preguntas_json, list) and all("pregunta" in p and "opciones" in p for p in preguntas_json):
+                preguntas = []
+                opciones = []
+                for p in preguntas_json:
+                    preguntas.append(p["pregunta"])
+                    opciones.append(p["opciones"])
+                return preguntas, opciones
+            else:
+                raise ValueError("Formato JSON no válido")
 
-    for p in preguntas_json:
-        preguntas.append(p["pregunta"])
-        opciones.append(p["opciones"])
+        except Exception as e:
+            print(f"⚠️ Intento {intento+1} fallido: {e}\nRespuesta recibida:\n{texto}")
 
-    return preguntas, opciones
+    # Si después de 3 intentos no logró generar, devolvemos vacío
+    return [], []
 
 def evaluar_respuestas(preguntas, respuestas, tema, materia, edad):
     prompt = f"""

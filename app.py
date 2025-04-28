@@ -53,10 +53,11 @@ if st.session_state.get("tema_listo"):
     st.markdown("---")
     st.subheader("🏆 ¡Reto de 7 preguntas para demostrar lo aprendido!")
 
-    if st.button("Iniciar Reto Interactivo"):
-        st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
-        st.session_state.respuestas = [""] * len(st.session_state.preguntas)
-        st.session_state.reto_en_progreso = True
+    if st.button("🚀 Iniciar Reto Interactivo"):
+        with st.spinner('⏳ Estoy preparando tus preguntas, un momento por favor...'):
+            st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
+            st.session_state.respuestas = [""] * len(st.session_state.preguntas)
+            st.session_state.reto_en_progreso = True
 
 # --- Validar reto ---
 if st.session_state.get("reto_en_progreso"):
