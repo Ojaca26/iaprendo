@@ -11,7 +11,7 @@ Luego explica de forma clara, amigable y en español para un niño de {edad} añ
 en la materia de {materia}.
 Usa ejemplos sencillos, emojis y finaliza dando un consejo de motivación para que siga aprendiendo.
 """
-    model = genai.GenerativeModel(model_name="models/gemini-2.5-pro-preview-03-25")
+    model = genai.GenerativeModel(model_name="models/gemini-2.5-pro")
     response = model.generate_content(prompt)
     return response.text.strip()
 
@@ -71,3 +71,4 @@ Usa ejemplos sencillos y emojis si es útil.
     model = genai.GenerativeModel(model_name="models/gemini-2.5-pro-preview-03-25")
     response = model.generate_content(prompt)
     return response.text.strip()
+
