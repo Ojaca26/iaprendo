@@ -27,7 +27,7 @@ materia = st.selectbox("📈 Elige una materia para aprender hoy:", [
 tema = st.text_input("🌍 ¿Qué tema estás viendo en clase?")
 
 # --- Explicación del tema ---
-if st.button("¡Explícame el tema!") and tema:
+if st.button("¡Explécame el tema!") and tema:
     explicacion = explicar_tema(nombre, materia, tema, edad)
     st.session_state.explicacion = explicacion
     st.session_state.tema_listo = True
@@ -58,7 +58,7 @@ if st.session_state.get("tema_listo"):
 
     if st.button("🚀 Iniciar Reto Interactivo"):
         with st.spinner("⏳ Estoy preparando tus preguntas, un momento por favor..."):
-            st.session_state.preguntas, st.session_state.respuestas_correctas = generar_preguntas(materia, tema, edad)
+            st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
             st.session_state.respuestas_usuario = [""] * len(st.session_state.preguntas)
             st.session_state.reto_en_progreso = True
 
@@ -71,19 +71,20 @@ if st.session_state.get("reto_en_progreso"):
         st.success("✅ ¡Preguntas generadas! ¡Mucha suerte!")
 
         st.markdown("### 🖋️ Responde las siguientes preguntas:")
-        for i, pregunta in enumerate(st.session_state.preguntas):
+        for i, (pregunta, opciones) in enumerate(zip(st.session_state.preguntas, st.session_state.opciones)):
             st.markdown(f"**{i+1}. {pregunta}**")
             st.session_state.respuestas_usuario[i] = st.radio(
                 "Selecciona una opción:",
-                ["Sí", "No"],
+                opciones,
                 key=f"pregunta_{i}"
             )
 
         if st.button("Evaluar mis respuestas"):
             respuestas_correctas = 0
 
-            for resp_usuario, resp_correcta in zip(st.session_state.respuestas_usuario, st.session_state.respuestas_correctas):
-                if resp_usuario.strip().lower() == resp_correcta.strip().lower():
+            # Evaluar basándose en el asterisco (*) que la IA pone en la opción correcta
+            for resp_usuario in st.session_state.respuestas_usuario:
+                if "*" in resp_usuario:
                     respuestas_correctas += 1
 
             st.markdown("### 📜 Resultado del Reto")
