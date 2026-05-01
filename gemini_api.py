@@ -2,6 +2,7 @@ import google.generativeai as genai
 import json
 import streamlit as st
 
+# Configuración de la API de Gemini
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def explicar_tema(nombre, materia, tema, edad):
@@ -11,7 +12,8 @@ Luego explica de forma clara, amigable y en español para un niño de {edad} añ
 en la materia de {materia}.
 Usa ejemplos sencillos, emojis y finaliza dando un consejo de motivación para que siga aprendiendo.
 """
-    model = genai.GenerativeModel(model_name="models/gemini-2.5-pro")
+    # Corregido: Usando un nombre de modelo válido (gemini-1.5-flash)
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     response = model.generate_content(prompt)
     return response.text.strip()
 
@@ -25,20 +27,29 @@ Devuelve solo un JSON válido como lista de objetos:
 ]
 No expliques nada más, solo el JSON.
 """
-    model = genai.GenerativeModel(model_name="models/gemini-2.5-pro-preview-03-25")
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     response = model.generate_content(prompt)
 
     texto = response.text.strip()
 
+    # Limpiar posibles bloques de código Markdown
     if texto.startswith("```"):
         partes = texto.split("```")
-        texto = "".join(p for p in partes if not p.strip().startswith("json") and not p.strip().startswith("python")).strip()
+        # Buscar la parte que parece JSON
+        for parte in partes:
+            parte_limpia = parte.strip()
+            if parte_limpia.startswith("json"):
+                texto = parte_limpia[4:].strip()
+                break
+            elif parte_limpia.startswith("["):
+                texto = parte_limpia
+                break
 
     try:
         preguntas_json = json.loads(texto)
     except Exception as e:
-        print(f"⚠️ Error cargando preguntas JSON: {e}\nContenido recibido:\n{texto}")
-        preguntas_json = []
+        st.error(f"⚠️ Error al procesar las preguntas: {e}")
+        return [], []
 
     preguntas = []
     opciones = []
@@ -58,7 +69,7 @@ Aquí están las respuestas:
     for i, (pregunta, respuesta) in enumerate(zip(preguntas, respuestas)):
         prompt += f"\nPregunta {i+1}: {pregunta}\nRespuesta del niño: {respuesta}"
 
-    model = genai.GenerativeModel(model_name="models/gemini-2.5-pro-preview-03-25")
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     response = model.generate_content(prompt)
     return response.text.strip()
 
@@ -68,7 +79,6 @@ Un niño llamado {nombre}, de {edad} años, tiene esta duda sobre el tema '{tema
 Respóndele de forma clara, afectuosa, amigable y adaptada a su edad en español.
 Usa ejemplos sencillos y emojis si es útil.
 """
-    model = genai.GenerativeModel(model_name="models/gemini-2.5-pro-preview-03-25")
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     response = model.generate_content(prompt)
     return response.text.strip()
-
