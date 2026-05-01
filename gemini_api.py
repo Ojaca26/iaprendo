@@ -13,8 +13,8 @@ en la materia de {materia}.
 Usa ejemplos sencillos, emojis y finaliza dando un consejo de motivación para que siga aprendiendo.
 """
     try:
-        # Usando el nombre completo del modelo
-        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        # Usando el nombre del modelo sin el prefijo 'models/' para evitar problemas de duplicación
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -31,17 +31,21 @@ Devuelve solo un JSON válido como lista de objetos:
 No expliques nada más, solo el JSON.
 """
     try:
-        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         response = model.generate_content(prompt)
         texto = response.text.strip()
 
-        # Limpiar bloques de código
+        # Limpiar bloques de código Markdown
         if "```" in texto:
-            texto = texto.split("```")[1]
-            if texto.startswith("json"):
-                texto = texto[4:].strip()
-            elif texto.startswith("python"):
-                texto = texto[6:].strip()
+            partes = texto.split("```")
+            for parte in partes:
+                p = parte.strip()
+                if p.startswith("json"):
+                    texto = p[4:].strip()
+                    break
+                elif p.startswith("["):
+                    texto = p
+                    break
         
         preguntas_json = json.loads(texto)
         
@@ -66,7 +70,7 @@ Aquí están las respuestas:
         prompt += f"\nPregunta {i+1}: {pregunta}\nRespuesta del niño: {respuesta}"
 
     try:
-        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -79,7 +83,7 @@ Respóndele de forma clara, afectuosa, amigable y adaptada a su edad en español
 Usa ejemplos sencillos y emojis si es útil.
 """
     try:
-        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
