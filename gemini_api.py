@@ -13,8 +13,8 @@ en la materia de {materia}.
 Usa ejemplos sencillos, emojis y finaliza dando un consejo de motivación para que siga aprendiendo.
 """
     try:
-        # Usando el nombre del modelo sin el prefijo 'models/' para evitar problemas de duplicación
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        # Actualizado a gemini-2.0-flash (el modelo 1.5 fue retirado en sept 2025)
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -31,7 +31,7 @@ Devuelve solo un JSON válido como lista de objetos:
 No expliques nada más, solo el JSON.
 """
     try:
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         response = model.generate_content(prompt)
         texto = response.text.strip()
 
@@ -70,7 +70,7 @@ Aquí están las respuestas:
         prompt += f"\nPregunta {i+1}: {pregunta}\nRespuesta del niño: {respuesta}"
 
     try:
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -83,7 +83,7 @@ Respóndele de forma clara, afectuosa, amigable y adaptada a su edad en español
 Usa ejemplos sencillos y emojis si es útil.
 """
     try:
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
