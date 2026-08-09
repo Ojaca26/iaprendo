@@ -92,7 +92,7 @@ if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
         st.session_state.audio_data = None
     st.rerun()
 
-if col_b.button("🔊 Escuchar (1.25x)", use_container_width=True, disabled=not st.session_state.explicacion):
+if col_b.button("🔊 Escuchar (1.50x)", use_container_width=True, disabled=not st.session_state.explicacion):
     with st.spinner("Generando voz..."):
         st.session_state.audio_data = generar_audio(st.session_state.explicacion)
     st.rerun()
