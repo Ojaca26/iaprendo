@@ -1,4 +1,4 @@
-# IAprendo v3.6
+# IAprendo v5.0 — audio SIEMPRE acelerado 1.5x real (static-ffmpeg)
 import streamlit as st
 from openai import OpenAI
 import io, os, asyncio, tempfile, json, re
@@ -45,36 +45,41 @@ def limpiar_para_voz(texto):
 
 def generar_audio(texto):
     limpio = limpiar_para_voz(texto)
+    tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp_in.close()
+    tmp_out = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp_out.close()
     try:
+        # Voz natural de Edge (si responde), a velocidad normal
         import edge_tts
         async def gen():
-            tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-            comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural", rate="+50%")
-            await comm.save(tmp.name)
-            with open(tmp.name, "rb") as f:
-                data = f.read()
-            os.unlink(tmp.name)
-            return data
-        return asyncio.run(gen())
-    except:
+            comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural")
+            await comm.save(tmp_in.name)
+        asyncio.run(gen())
+    except Exception:
+        # Fallback: Google TTS (siempre funciona)
         from gtts import gTTS
-        tts = gTTS(text=limpio, lang="es", slow=False)
         buf = io.BytesIO()
-        tts.write_to_fp(buf)
+        gTTS(text=limpio, lang="es", slow=False).write_to_fp(buf)
         buf.seek(0)
-        # Acelerar con ffmpeg: 1.5x
-        raw = buf.read()
-        tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        tmp_in.write(raw)
-        tmp_in.close()
-        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        tmp_out.close()
-        os.system(f"ffmpeg -y -i {tmp_in.name} -filter:a \"atempo=1.8\" -vn {tmp_out.name} 2>/dev/null")
-        with open(tmp_out.name, "rb") as f:
-            data = f.read()
-        os.unlink(tmp_in.name)
-        os.unlink(tmp_out.name)
-        return data if data else raw
+        with open(tmp_in.name, "wb") as f:
+            f.write(buf.read())
+    # Acelerar SIEMPRE a 1.5x con ffmpeg (static-ffmpeg funciona en la nube)
+    try:
+        import static_ffmpeg
+        static_ffmpeg.add_paths()
+    except Exception:
+        pass
+    r = os.system(f'ffmpeg -y -i "{tmp_in.name}" -filter:a "atempo=1.5" -vn "{tmp_out.name}" 2>/dev/null')
+    if r != 0 or not os.path.exists(tmp_out.name) or os.path.getsize(tmp_out.name) == 0:
+        # Si ffmpeg falla, devolver el audio normal (mejor que nada)
+        os.rename(tmp_in.name, tmp_out.name)
+    with open(tmp_out.name, "rb") as f:
+        data = f.read()
+    for f in (tmp_in.name, tmp_out.name):
+        try: os.unlink(f)
+        except Exception: pass
+    return data
 
 def preguntar(prompt):
     resp = deepseek.chat.completions.create(
@@ -92,7 +97,7 @@ if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
         st.session_state.audio_data = None
     st.rerun()
 
-if col_b.button("🔊 Escuchar (1.8x)", use_container_width=True, disabled=not st.session_state.explicacion):
+if col_b.button("🔊 Escuchar (1.5x)", use_container_width=True, disabled=not st.session_state.explicacion):
     with st.spinner("Generando voz..."):
         st.session_state.audio_data = generar_audio(st.session_state.explicacion)
     st.rerun()
@@ -102,7 +107,7 @@ if st.session_state.explicacion:
     st.markdown(st.session_state.explicacion)
     if st.session_state.audio_data:
         st.audio(st.session_state.audio_data, format="audio/mp3")
-        st.caption("🎧 Audio a 1.25x (ya viene acelerado)")
+        st.caption("🎧 Audio acelerado 1.5x (ya viene rápido)")
 
 if st.session_state.explicacion:
     st.divider()
