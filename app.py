@@ -1,4 +1,4 @@
-# IAprendo v3.4 — DeepSeek + TTS dual
+# IAprendo v3.5 — DeepSeek + TTS optimizado
 import streamlit as st
 from openai import OpenAI
 import io, os, asyncio, tempfile, json, re
@@ -31,15 +31,21 @@ materia = st.selectbox("📘 Materia:", ["Ciencias Naturales","Matematicas","Esp
 tema = st.text_input("🌍 ¿Qué tema quieres aprender hoy?", placeholder="Ej: El sistema solar...")
 
 def limpiar_para_voz(texto):
-    """Quita markdown para que el TTS no lea asteriscos ni símbolos."""
-    texto = re.sub(r'\*\*(.+?)\*\*', r'\1', texto)  # negrita
-    texto = re.sub(r'\*(.+?)\*', r'\1', texto)        # cursiva
-    texto = re.sub(r'`(.+?)`', r'\1', texto)           # código
-    texto = re.sub(r'#+\s*', '', texto)                # headers
-    texto = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', texto)   # links
-    texto = re.sub(r'[▶️🔊🎓🧠📚🏆💬🌍📘👶📖🎧🚀📝✅❌📊🌟💪🤖]', '', texto)
-    texto = re.sub(r'\n{2,}', '. ', texto)              # doble salto → pausa
-    texto = re.sub(r'\n', ' ', texto)                   # saltos simples
+    """Quita markdown, emojis y simbolos para TTS limpio."""
+    # Quitar emojis (unicode)
+    texto = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251\u2600-\u26FF\u2700-\u27BF\u2B50\u2764\uFE0F\u200D]', '', texto)
+    # Quitar markdown
+    texto = re.sub(r'\*\*(.+?)\*\*', r'\1', texto)
+    texto = re.sub(r'\*(.+?)\*', r'\1', texto)
+    texto = re.sub(r'`(.+?)`', r'\1', texto)
+    texto = re.sub(r'#+\s*', '', texto)
+    texto = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', texto)
+    # Quitar emojis de texto (:emoji:)
+    texto = re.sub(r':\w+:', '', texto)
+    # Normalizar espacios
+    texto = re.sub(r'\n{2,}', '. ', texto)
+    texto = re.sub(r'\n', ' ', texto)
+    texto = re.sub(r'\s{2,}', ' ', texto)
     return texto.strip()
 
 def generar_audio(texto):
@@ -48,7 +54,12 @@ def generar_audio(texto):
         import edge_tts
         async def edge():
             tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-            comm = edge_tts.Communicate(texto_limpio, "es-CO-GonzaloNNeural")
+            # Usar voz con rate ajustado (+25%)
+            comm = edge_tts.Communicate(
+                texto_limpio, 
+                "es-CO-GonzaloNNeural",
+                rate="+25%"
+            )
             await comm.save(tmp.name)
             with open(tmp.name, "rb") as f:
                 return f.read()
@@ -72,7 +83,7 @@ def preguntar(prompt):
 col_a, col_b = st.columns(2)
 if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
     with st.spinner("Pensando..."):
-        prompt = f"Hola {nombre} de {edad} anios. Explica el tema '{tema}' de {materia} de forma SUPER SENCILLA, como si hablaras con un nino. Usa ejemplos divertidos, analogias con cosas cotidianas, emojis, maximo 4 parrafos. NO hagas la tarea."
+        prompt = f"Hola {nombre} de {edad} anios. Explica el tema '{tema}' de {materia} de forma SUPER SENCILLA, como si hablaras con un nino. Usa ejemplos divertidos, analogias con cosas cotidianas, maximo 4 parrafos. NO uses emojis ni markdown."
         st.session_state.explicacion = preguntar(prompt)
         st.session_state.audio_data = None
     st.rerun()
@@ -87,6 +98,7 @@ if st.session_state.explicacion:
     st.markdown(st.session_state.explicacion)
     if st.session_state.audio_data:
         st.audio(st.session_state.audio_data, format="audio/mp3")
+        st.caption("🎧 Velocidad: 1.25x | Voz: Gonzalo (Colombia)")
 
 if st.session_state.explicacion:
     st.divider()
@@ -140,4 +152,4 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
                 st.info(preguntar(prompt))
 
 st.divider()
-st.caption("🤖 IAprendo v3.4 — Hermes + DeepSeek | 2026")
+st.caption("🤖 IAprendo v3.5 — Hermes + DeepSeek | 2026")
