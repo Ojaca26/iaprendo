@@ -1,7 +1,7 @@
 # IAprendo v3.0 — Tutor IA con DeepSeek
 import streamlit as st
 from openai import OpenAI
-from gtts import gTTS
+import edge_tts
 import io, json
 
 st.set_page_config(page_title="IAprendo", page_icon="🤖", layout="centered")
@@ -32,9 +32,17 @@ materia = st.selectbox("📘 Materia:", ["Ciencias Naturales","Matematicas","Esp
 tema = st.text_input("🌍 ¿Qué tema quieres aprender hoy?", placeholder="Ej: El sistema solar...")
 
 def texto_a_voz(texto):
-    tts = gTTS(text=texto, lang="es", slow=False, tld="com.mx")
-    buf = io.BytesIO()
-    tts.write_to_fp(buf)
+    import tempfile, base64, asyncio
+    async def generar():
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        comm = edge_tts.Communicate(texto, "es-CO-GonzaloNNeural")
+        await comm.save(tmp.name)
+        return tmp.name
+    archivo = asyncio.run(generar())
+    with open(archivo, "rb") as f:
+        data = f.read()
+    import os; os.unlink(archivo)
+    buf = io.BytesIO(data)
     buf.seek(0)
     return buf
 
