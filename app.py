@@ -170,26 +170,46 @@ if st.session_state.explicacion:
                     if isinstance(q, str):
                         continue
                     pregunta = q.get("pregunta") or q.get("question") or ""
-                    opciones = q.get("opciones") or q.get("options") or []
                     correcta = q.get("correcta") or q.get("answer") or q.get("correct") or ""
+                    opciones = q.get("opciones") or q.get("options") or []
+                    # opciones puede ser dict {"A": "Venus"}, lista, o string multilinea
+                    if isinstance(opciones, dict):
+                        opciones = [f"{k}) {v}" if not str(v).lstrip().upper().startswith(str(k).upper() + ")") else str(v) for k, v in opciones.items()]
+                    elif isinstance(opciones, str):
+                        opciones = [o.strip() for o in opciones.replace("\r","").split("\n") if o.strip()] or [opciones]
+                    elif isinstance(opciones, (list, tuple)):
+                        opciones = [str(o) for o in opciones]
+                    else:
+                        opciones = []
                     # Si la correcta viene marcada con * dentro de las opciones
                     if not correcta:
                         for op in opciones:
                             if isinstance(op, str) and "*" in op:
                                 correcta = op.replace("*", "").strip()
                                 break
-                    opciones = [str(op).replace("*", "").strip() for op in opciones]
-                    if pregunta and opciones:
-                        preguntas.append({"pregunta": pregunta, "opciones": opciones, "correcta": str(correcta).strip()})
+                    opciones = [str(op).replace("*", "").strip() for op in opciones if str(op).strip()]
+                    # Asegurar prefijo de letra si las opciones vienen sin él
+                    opciones_final = []
+                    for idx, op in enumerate(opciones):
+                        if not re.match(r'^[A-D]\s*[).:]', op):
+                            op = f"{chr(65+idx)}) {op}"
+                        opciones_final.append(op)
+                    # Limpiar correcta: "B)" -> "B"
+                    correcta = re.sub(r'^([A-D])\s*[).:]?\s*$', r'\1', str(correcta).strip())
+                    if pregunta and opciones_final:
+                        preguntas.append({"pregunta": pregunta, "opciones": opciones_final, "correcta": correcta})
                 st.session_state.preguntas = preguntas
                 st.session_state.respuestas = [None]*len(preguntas)
                 st.session_state.quiz_ready = bool(preguntas)
+                if not preguntas:
+                    st.error("No se pudieron leer las preguntas. Intenta de nuevo.")
             except:
                 st.error("Error. Intenta de nuevo.")
                 st.session_state.quiz_ready = False
 
 if st.session_state.quiz_ready and st.session_state.preguntas:
-    st.markdown("### 📝 Responde las 5 preguntas:")
+    total = len(st.session_state.preguntas)
+    st.markdown(f"### 📝 Responde las {total} preguntas:")
     for i, q in enumerate(st.session_state.preguntas):
         st.markdown(f"**{i+1}. {q['pregunta']}**")
         st.session_state.respuestas[i] = st.radio("Selecciona:", q['opciones'], key=f"q_{i}", index=None)
@@ -220,7 +240,13 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
         resultados = []
         for i, q in enumerate(st.session_state.preguntas):
             ok = es_correcta(i,q)
-            resultados.append(( "✅" if ok else "❌", q['pregunta'], "¡Bien!" if ok else f"Era {q['correcta']})"))
+            # Mostrar la opcion completa como respuesta correcta (no solo la letra)
+            correcta_texto = q['correcta'].strip()
+            for op in q['opciones']:
+                if _norm(op)[0] and _norm(op)[0] == _norm(correcta_texto)[0]:
+                    correcta_texto = op
+                    break
+            resultados.append(( "✅" if ok else "❌", q['pregunta'], "¡Bien!" if ok else f"Era {correcta_texto}"))
         
         total = len(st.session_state.preguntas)
         st.markdown(f"## 📊 {correctas}/{total}")
