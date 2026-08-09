@@ -1,111 +1,150 @@
-# app.py
+# IAprendo v2.0 — Tu tutor IA educativo con voz
 import streamlit as st
+import google.generativeai as genai
 from gtts import gTTS
-from gemini_api import explicar_tema, generar_preguntas, evaluar_respuestas, responder_duda
-import io
-import os
+import io, os, json
 
-st.set_page_config(page_title="IAprendo – Tu tutor IA educativo", layout="centered")
-st.title("Bienvenidos a IAprendo")
+# Config
+st.set_page_config(page_title="IAprendo 🎓", page_icon="🤖", layout="centered")
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-st.image("imagen_materias.png", width=700)
-
+# Estilos para niños
 st.markdown("""
-### 👋 ¡Hola! Soy **IArvis**, tu profe robot educativo 🤖
-Estoy aquí para explicarte los temas de clase de una forma divertida, fácil y con dibujos 🧠🎨
+<style>
+    .big { font-size: 1.4em; }
+    .correct { color: green; font-weight: bold; }
+    .wrong { color: red; }
+    .stButton button { background: #4CAF50; color: white; font-size: 1.2em; border-radius: 15px; padding: 15px; }
+</style>
+""", unsafe_allow_html=True)
 
-Primero necesito saber:
-""")
+# Init session
+for k in ['explicacion','quiz_ready','preguntas','respuestas','evaluado','refuerzo']:
+    if k not in st.session_state:
+        st.session_state[k] = None if k != 'quiz_ready' else False
+        st.session_state['respuestas'] = []
+        st.session_state['evaluado'] = False
 
-# --- Datos del niño ---
-nombre = st.text_input("🎓 ¿Cómo te llamas?") or "Explorador"
-edad = st.number_input("👶 ¿Cuántos años tienes?", min_value=5, max_value=14, step=1)
-materia = st.selectbox("📈 Elige una materia para aprender hoy:", [
-    "Ciencias", "Matemáticas", "Español", "Inglés", "Religión",
-    "Historia", "Tecnología", "Arte", "Sociales", "Música", "Deportes"
-])
-tema = st.text_input("🌍 ¿Qué tema estás viendo en clase?")
+st.title("🤖 IAprendo — Tu Profe Robot")
+st.markdown("### 📚 ¡Hola! Soy **IArvis**, tu tutor IA. Te explico, te escucho y jugamos.")
 
-# --- Explicación del tema ---
-if st.button("¡Explécame el tema!") and tema:
-    explicacion = explicar_tema(nombre, materia, tema, edad)
-    st.session_state.explicacion = explicacion
-    st.session_state.tema_listo = True
+# ── Paso 1: Datos ──
+col1, col2 = st.columns(2)
+with col1:
+    nombre = st.text_input("🎓 ¿Cómo te llamas?", value="Amigo")
+with col2:
+    edad = st.slider("👶 ¿Cuántos años tienes?", 5, 14, 8)
 
-if st.session_state.get("tema_listo"):
-    st.markdown(f"### 📚 Hola **{nombre}**, aquí está la explicación:")
-    st.write(st.session_state.explicacion)
+materia = st.selectbox("📘 Materia:", ["Ciencias Naturales","Matemáticas","Español","Inglés","Historia","Geografía","Tecnología","Arte","Música"])
+tema = st.text_input("🌍 ¿Qué tema quieres aprender hoy?", placeholder="Ej: El sistema solar, las fracciones...")
 
-    # Reproducir voz si está en local
-    if os.getenv("LOCAL_ENV") == "1":
-        if st.button("🔊 Leer en voz alta"):
-            tts = gTTS(text=st.session_state.explicacion, lang="es", slow=False)
-            audio_fp = io.BytesIO()
-            tts.write_to_fp(audio_fp)
-            audio_fp.seek(0)
-            st.audio(audio_fp, format="audio/mp3")
-            st.info("🎧 Si quieres, puedes acelerar el audio desde el reproductor (por ejemplo, a velocidad 1.25x). ¡Tú decides!")
+# ── Función: Texto a Voz ──
+def texto_a_voz(texto):
+    tts = gTTS(text=texto, lang="es", slow=False, tld="com.mx")
+    buf = io.BytesIO()
+    tts.write_to_fp(buf)
+    buf.seek(0)
+    return buf
 
-    st.markdown("---")
-    st.subheader("💬 ¡Hazme una pregunta si quieres saber más!")
-    duda = st.text_input("👫 Escribe tu duda aquí:")
-    if st.button("Responder duda") and duda:
-        respuesta = responder_duda(nombre, duda, tema, materia, edad)
-        st.success(respuesta)
+# ── Paso 2: Explicación ──
+if st.button("🧠 ¡Explícame!", use_container_width=True) and tema:
+    with st.spinner("Pensando la mejor explicación..."):
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        prompt = f"Hola {nombre} de {edad} años. Explica el tema '{tema}' de {materia} de forma SUPER SENCILLA, como si hablaras con un niño. Usa ejemplos divertidos, analogías con cosas cotidianas, emojis, y máximo 4 párrafos. NO hagas la tarea, solo explica para que entienda."
+        resp = model.generate_content(prompt)
+        st.session_state.explicacion = resp.text
+    
+    st.success(f"📖 {nombre}, aquí va:")
+    st.markdown(st.session_state.explicacion)
+    
+    # Botón de audio
+    if st.button("🔊 Escuchar explicación", use_container_width=True):
+        audio = texto_a_voz(st.session_state.explicacion)
+        st.audio(audio, format="audio/mp3")
+        st.caption("🎧 Subí el volumen y escuchá tranquilo")
 
-    st.markdown("---")
-    st.subheader("🏆 ¡Reto de 7 preguntas para demostrar lo aprendido!")
+# ── Paso 3: Preguntas del niño ──
+if st.session_state.explicacion:
+    st.divider()
+    st.subheader("💬 ¿Tienes dudas? Pregúntame lo que quieras")
+    duda = st.text_input("Escribe tu pregunta aquí...", key="duda_input")
+    if st.button("🤔 Responder", use_container_width=True) and duda:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        prompt = f"{nombre} ({edad} años) pregunta sobre '{tema}' de {materia}: {duda}. Responde de forma súper simple, un solo párrafo, con un ejemplo concreto."
+        resp = model.generate_content(prompt)
+        st.info(resp.text)
 
-    if st.button("🚀 Iniciar Reto Interactivo"):
-        with st.spinner("⏳ Estoy preparando tus preguntas, un momento por favor..."):
-            st.session_state.preguntas, st.session_state.opciones = generar_preguntas(materia, tema, edad)
-            st.session_state.respuestas_usuario = [""] * len(st.session_state.preguntas)
-            st.session_state.reto_en_progreso = True
+    # ── Paso 4: Quiz ──
+    st.divider()
+    st.subheader("🏆 ¡Demuestra lo que aprendiste!")
+    
+    if st.button("🚀 ¡Quiero el reto!", use_container_width=True):
+        with st.spinner("Preparando preguntas..."):
+            model = genai.GenerativeModel("gemini-2.0-flash")
+            prompt = f"Crea 5 preguntas tipo test sobre '{tema}' de {materia} para un niño de {edad} años. 3 opciones cada una (A, B, C). Marca la correcta con *. Devuelve SOLO JSON: [{{"pregunta":"...","opciones":["A) ...","B) ...","C) ..."],"correcta":"A"}}]"
+            try:
+                resp = model.generate_content(prompt)
+                txt = resp.text.strip()
+                if "```" in txt:
+                    txt = txt.split("```")[1].replace("json","").strip()
+                qdata = json.loads(txt)
+                st.session_state.preguntas = qdata
+                st.session_state.respuestas = [None]*5
+                st.session_state.quiz_ready = True
+                st.session_state.evaluado = False
+            except:
+                st.error("Error generando preguntas. Intenta de nuevo.")
+                st.session_state.quiz_ready = False
 
-# --- Reto en progreso ---
-if st.session_state.get("reto_en_progreso"):
-    if not st.session_state.preguntas:
-        st.error("⚠️ No se pudieron generar preguntas. Intenta de nuevo o cambia el tema.")
-        st.session_state.reto_en_progreso = False
-    else:
-        st.success("✅ ¡Preguntas generadas! ¡Mucha suerte!")
-
-        st.markdown("### 🖋️ Responde las siguientes preguntas:")
-        for i, (pregunta, opciones) in enumerate(zip(st.session_state.preguntas, st.session_state.opciones)):
-            st.markdown(f"**{i+1}. {pregunta}**")
-            st.session_state.respuestas_usuario[i] = st.radio(
-                "Selecciona una opción:",
-                opciones,
-                key=f"pregunta_{i}"
-            )
-
-        if st.button("Evaluar mis respuestas"):
-            respuestas_correctas = 0
-
-            # Evaluar basándose en el asterisco (*) que la IA pone en la opción correcta
-            for resp_usuario in st.session_state.respuestas_usuario:
-                if "*" in resp_usuario:
-                    respuestas_correctas += 1
-
-            st.markdown("### 📜 Resultado del Reto")
-            st.success(f"Respondiste correctamente {respuestas_correctas} de 7 preguntas.")
-
-            if respuestas_correctas >= 6:
-                st.success(f"🌟🌟🌟 ¡Excelente {nombre}! ¡Eres un campeón!")
-            elif respuestas_correctas >= 4:
-                st.info(f"🌟🌟 Muy bien {nombre}, sigue esforzándote.")
+# ── Mostrar quiz ──
+if st.session_state.quiz_ready and st.session_state.preguntas:
+    st.markdown("### 📝 Responde las 5 preguntas:")
+    for i, q in enumerate(st.session_state.preguntas):
+        st.markdown(f"**{i+1}. {q['pregunta']}**")
+        st.session_state.respuestas[i] = st.radio(
+            f"Selecciona:", q['opciones'],
+            key=f"q_{i}", index=None
+        )
+    
+    if st.button("✅ ¡Revisar mis respuestas!", use_container_width=True):
+        correctas = 0
+        resultados = []
+        for i, q in enumerate(st.session_state.preguntas):
+            respuesta_dada = st.session_state.respuestas[i]
+            correcta = q['correcta']
+            if respuesta_dada and respuesta_dada.startswith(correcta):
+                correctas += 1
+                resultados.append(("✅", q['pregunta'], "¡Bien!"))
             else:
-                st.warning(f"😅 No te preocupes {nombre}, vamos a reforzar un poco más.")
+                resultados.append(("❌", q['pregunta'], f"Era {correcta})"))
+        
+        st.session_state.evaluado = True
+        st.markdown(f"## 📊 Resultado: {correctas}/5")
+        
+        if correctas == 5:
+            st.balloons()
+            st.success(f"🌟🌟🌟 ¡PERFECTO {nombre}! ¡Eres un genio!")
+        elif correctas >= 3:
+            st.info(f"🌟 ¡Muy bien {nombre}! Vas por buen camino.")
+        else:
+            st.warning(f"💪 No te preocupes {nombre}, vamos a repasar juntos.")
+        
+        # Mostrar resultados
+        for icono, pregunta, mensaje in resultados:
+            st.markdown(f"{icono} **{pregunta}** — {mensaje}")
+        
+        # ── Paso 5: Refuerzo ──
+        if correctas < 5:
+            st.divider()
+            st.subheader("📚 Refuerzo Personalizado")
+            with st.spinner("Preparando material de refuerzo..."):
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                fallos = [r[1] for r in resultados if r[0]=="❌"]
+                fallos_txt = "\n".join(f"- {f}" for f in fallos)
+                prompt = f"Un niño de {edad} años falló estas preguntas sobre '{tema}' ({materia}):\n{fallos_txt}\n\nExplica de nuevo esos conceptos de forma MUY SENCILLA (máximo 2 párrafos por concepto), con ejemplos divertidos y emojis. Que el niño entienda dónde se equivocó y cómo recordarlo mejor."
+                resp = model.generate_content(prompt)
+                st.session_state.refuerzo = resp.text
+                st.info(st.session_state.refuerzo)
 
-            # Activar plan de refuerzo si tuvo menos de 7 aciertos
-            if respuestas_correctas < 7:
-                plan_refuerzo = evaluar_respuestas(
-                    st.session_state.preguntas,
-                    st.session_state.respuestas_usuario,
-                    tema, materia, edad
-                )
-                st.markdown("---")
-                st.subheader("📊 Plan de Refuerzo Personalizado")
-                st.info(plan_refuerzo)
-
-            st.session_state.reto_en_progreso = False
+st.divider()
+st.caption("🤖 IAprendo v2.0 — Hecho con cariño por Hermes + Gemini | 2026")
