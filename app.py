@@ -69,7 +69,7 @@ def generar_audio(texto):
         tmp_in.close()
         tmp_out = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp_out.close()
-        os.system(f"ffmpeg -y -i {tmp_in.name} -filter:a \"atempo=1.5\" -vn {tmp_out.name} 2>/dev/null")
+        os.system(f"ffmpeg -y -i {tmp_in.name} -filter:a \"atempo=1.8\" -vn {tmp_out.name} 2>/dev/null")
         with open(tmp_out.name, "rb") as f:
             data = f.read()
         os.unlink(tmp_in.name)
@@ -92,7 +92,7 @@ if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
         st.session_state.audio_data = None
     st.rerun()
 
-if col_b.button("🔊 Escuchar (1.50x)", use_container_width=True, disabled=not st.session_state.explicacion):
+if col_b.button("🔊 Escuchar (1.8x)", use_container_width=True, disabled=not st.session_state.explicacion):
     with st.spinner("Generando voz..."):
         st.session_state.audio_data = generar_audio(st.session_state.explicacion)
     st.rerun()
