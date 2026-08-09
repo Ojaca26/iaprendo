@@ -1,5 +1,6 @@
-# IAprendo v5.1 — audio SIEMPRE 1.5x real (PyAV/FFmpeg embebido) + quiz robusto
+# IAprendo v5.3 — audio 1.5x con 3 planes (edge-tts → gTTS multi-dominio → voz navegador)
 import streamlit as st
+import streamlit.components.v1 as components
 from openai import OpenAI
 import io, os, asyncio, tempfile, json, re
 st.set_page_config(page_title="IAprendo", page_icon="🤖", layout="centered")
@@ -11,11 +12,12 @@ deepseek = OpenAI(
 
 st.markdown("<style>.stButton button{background:#4CAF50;color:white;font-size:1.2em;border-radius:15px;padding:15px}</style>", unsafe_allow_html=True)
 
-for k in ['explicacion','quiz_ready','preguntas','respuestas','audio_data','refuerzo']:
+for k in ['explicacion','quiz_ready','preguntas','respuestas','audio_data','refuerzo','audio_errores']:
     if k not in st.session_state:
         st.session_state[k] = None if k != 'quiz_ready' else False
         st.session_state['respuestas'] = []
         st.session_state['audio_data'] = None
+        st.session_state['audio_errores'] = None
 
 st.title("🤖 IAprendo — Tu Profe Robot")
 st.markdown("### 📚 ¡Hola! Soy **IArvis**, tu tutor IA.")
@@ -82,40 +84,72 @@ def acelerar_audio_pyav(ruta_in, ruta_out, factor="1.5"):
     inp.close()
 
 def generar_audio(texto):
+    """Genera voz y la acelera a 1.5x. Prueba edge-tts, luego gTTS con varios dominios.
+    Devuelve (bytes_audio o None, lista de errores para diagnostico)."""
+    import time
     limpio = limpiar_para_voz(texto)
-    tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    tmp_in.close()
-    tmp_out = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    tmp_out.close()
-    try:
-        # Voz natural de Edge (si responde), a velocidad normal
-        import edge_tts
-        async def gen():
-            comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural")
-            await comm.save(tmp_in.name)
-        asyncio.run(gen())
-    except Exception:
-        # Fallback: Google TTS (siempre funciona)
-        from gtts import gTTS
-        buf = io.BytesIO()
-        gTTS(text=limpio, lang="es", slow=False).write_to_fp(buf)
-        buf.seek(0)
-        with open(tmp_in.name, "wb") as f:
-            f.write(buf.read())
-    # Acelerar SIEMPRE a 1.5x con FFmpeg embebido (PyAV)
-    try:
-        acelerar_audio_pyav(tmp_in.name, tmp_out.name, "1.5")
-        if not os.path.exists(tmp_out.name) or os.path.getsize(tmp_out.name) == 0:
-            raise RuntimeError("audio vacio")
-    except Exception:
-        # Si PyAV falla, devolver el audio normal (mejor que nada)
-        os.rename(tmp_in.name, tmp_out.name)
-    with open(tmp_out.name, "rb") as f:
-        data = f.read()
-    for f in (tmp_in.name, tmp_out.name):
-        try: os.unlink(f)
-        except Exception: pass
-    return data
+    errores = []
+
+    def acelerar(ruta_in):
+        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp_out.close()
+        try:
+            acelerar_audio_pyav(ruta_in, tmp_out.name, "1.5")
+            if not os.path.exists(tmp_out.name) or os.path.getsize(tmp_out.name) == 0:
+                raise RuntimeError("audio vacio tras acelerar")
+            with open(tmp_out.name, "rb") as f:
+                data = f.read()
+            os.unlink(ruta_in)
+            os.unlink(tmp_out.name)
+            return data
+        except Exception as e:
+            errores.append(f"pyav: {str(e)[:80]}")
+            with open(ruta_in, "rb") as f:
+                data = f.read()
+            os.unlink(ruta_in)
+            return data  # audio normal (mejor que nada)
+
+    # Intento 1: edge-tts (voz natural Gonzalo), 2 reintentos
+    for intento in range(2):
+        tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp_in.close()
+        try:
+            import edge_tts
+            async def gen():
+                comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural")
+                await comm.save(tmp_in.name)
+            asyncio.run(gen())
+            if os.path.getsize(tmp_in.name) > 100:
+                return acelerar(tmp_in.name)
+            raise RuntimeError("edge-tts devolvio audio vacio")
+        except Exception as e:
+            errores.append(f"edge-tts: {str(e)[:80]}")
+            try: os.unlink(tmp_in.name)
+            except Exception: pass
+            time.sleep(1.5)
+
+    # Intento 2: gTTS con varios dominios (Google bloquea algunos desde datacenters)
+    for tld in ("es", "com.mx", "com"):
+        for intento in range(2):
+            tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+            tmp_in.close()
+            try:
+                from gtts import gTTS
+                buf = io.BytesIO()
+                gTTS(text=limpio, lang="es", slow=False, tld=tld).write_to_fp(buf)
+                buf.seek(0)
+                with open(tmp_in.name, "wb") as f:
+                    f.write(buf.read())
+                if os.path.getsize(tmp_in.name) > 100:
+                    return acelerar(tmp_in.name)
+                raise RuntimeError("gTTS devolvio audio vacio")
+            except Exception as e:
+                errores.append(f"gTTS({tld}): {str(e)[:80]}")
+                try: os.unlink(tmp_in.name)
+                except Exception: pass
+                time.sleep(1)
+
+    return None, errores
 
 def preguntar(prompt):
     resp = deepseek.chat.completions.create(
@@ -131,11 +165,17 @@ if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
         prompt = f"Hola {nombre} de {edad} anios. Explica el tema '{tema}' de {materia} de forma SUPER SENCILLA, divertida y visual, como si hablaras con un nino. Usa ejemplos cotidianos, analogias, emojis y maximo 4 parrafos. Que sea atractivo de leer. NO hagas la tarea."
         st.session_state.explicacion = preguntar(prompt)
         st.session_state.audio_data = None
+        st.session_state.audio_errores = None
     st.rerun()
 
 if col_b.button("🔊 Escuchar (1.5x)", use_container_width=True, disabled=not st.session_state.explicacion):
     with st.spinner("Generando voz..."):
-        st.session_state.audio_data = generar_audio(st.session_state.explicacion)
+        resultado = generar_audio(st.session_state.explicacion)
+        if isinstance(resultado, tuple):
+            st.session_state.audio_data, st.session_state.audio_errores = resultado
+        else:
+            st.session_state.audio_data = resultado
+            st.session_state.audio_errores = []
     st.rerun()
 
 if st.session_state.explicacion:
@@ -144,6 +184,33 @@ if st.session_state.explicacion:
     if st.session_state.audio_data:
         st.audio(st.session_state.audio_data, format="audio/mp3")
         st.caption("🎧 Audio acelerado 1.5x (ya viene rápido)")
+    elif st.session_state.get("audio_errores") is not None:
+        # Plan C: voz del navegador (Web Speech API) - no depende de servidores
+        texto_js = json.dumps(st.session_state.explicacion)
+        st.components.v1.html(f"""
+        <style>
+          .btn-voz {{ background:#4CAF50; color:white; font-size:1.2em; border:none;
+                       border-radius:15px; padding:15px 30px; cursor:pointer; width:100%; }}
+          .btn-voz:hover {{ background:#45a049; }}
+        </style>
+        <button class="btn-voz" onclick="leer()">🔊 Escuchar (1.5x)</button>
+        <p style="color:#666;font-size:0.85em;text-align:center;margin-top:6px">
+          Voz del dispositivo (los servidores de voz están saturados)
+        </p>
+        <script>
+        function leer(){{
+          const t = {texto_js};
+          if (!('speechSynthesis' in window)) {{ alert('Tu navegador no soporta voz.'); return; }}
+          speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(t);
+          u.lang = 'es-CO';
+          u.rate = 1.5;
+          u.pitch = 1.0;
+          speechSynthesis.speak(u);
+        }}
+        </script>
+        """, height=110)
+        st.caption("⚠️ No se pudo generar el archivo de voz (servidores externos bloqueados). Usa el botón de arriba.")
 
 if st.session_state.explicacion:
     st.divider()
@@ -265,4 +332,4 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
                 st.info(preguntar(prompt))
 
 st.divider()
-st.caption("🤖 IAprendo v5.1 — Hermes + DeepSeek | 2026")
+st.caption("🤖 IAprendo v5.3 — Hermes + DeepSeek | 2026")
