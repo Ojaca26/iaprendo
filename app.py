@@ -52,7 +52,9 @@ def generar_audio(texto):
             comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural", rate="+50%")
             await comm.save(tmp.name)
             with open(tmp.name, "rb") as f:
-                return f.read()
+                data = f.read()
+            os.unlink(tmp.name)
+            return data
         return asyncio.run(gen())
     except:
         from gtts import gTTS
@@ -60,7 +62,19 @@ def generar_audio(texto):
         buf = io.BytesIO()
         tts.write_to_fp(buf)
         buf.seek(0)
-        return buf.read()
+        # Acelerar con ffmpeg: 1.5x
+        raw = buf.read()
+        tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp_in.write(raw)
+        tmp_in.close()
+        tmp_out = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp_out.close()
+        os.system(f"ffmpeg -y -i {tmp_in.name} -filter:a \"atempo=1.5\" -vn {tmp_out.name} 2>/dev/null")
+        with open(tmp_out.name, "rb") as f:
+            data = f.read()
+        os.unlink(tmp_in.name)
+        os.unlink(tmp_out.name)
+        return data if data else raw
 
 def preguntar(prompt):
     resp = deepseek.chat.completions.create(
