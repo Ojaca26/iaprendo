@@ -49,7 +49,7 @@ def generar_audio(texto):
         import edge_tts
         async def gen():
             tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-            comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural", rate="+25%")
+            comm = edge_tts.Communicate(limpio, "es-CO-GonzaloNNeural", rate="+50%")
             await comm.save(tmp.name)
             with open(tmp.name, "rb") as f:
                 return f.read()
