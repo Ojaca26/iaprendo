@@ -1,8 +1,7 @@
-# IAprendo v3.2 — Tutor IA con DeepSeek + Edge TTS
+# IAprendo v3.3 — DeepSeek + TTS dual (Edge local / gTTS cloud)
 import streamlit as st
 from openai import OpenAI
-import edge_tts
-import io, os, asyncio, tempfile, base64
+import io, os, asyncio, tempfile, json
 
 st.set_page_config(page_title="IAprendo", page_icon="🤖", layout="centered")
 
@@ -31,14 +30,26 @@ with col2:
 materia = st.selectbox("📘 Materia:", ["Ciencias Naturales","Matematicas","Español","Inglés","Historia","Geografia","Tecnologia","Arte","Musica"])
 tema = st.text_input("🌍 ¿Qué tema quieres aprender hoy?", placeholder="Ej: El sistema solar...")
 
-async def generar_audio(texto):
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    comm = edge_tts.Communicate(texto, "es-CO-GonzaloNNeural")
-    await comm.save(tmp.name)
-    with open(tmp.name, "rb") as f:
-        data = f.read()
-    os.unlink(tmp.name)
-    return data
+def generar_audio(texto):
+    """Genera audio: prueba Edge TTS, si falla usa gTTS."""
+    try:
+        # Edge TTS (voz natural colombiana)
+        import edge_tts
+        async def edge():
+            tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+            comm = edge_tts.Communicate(texto, "es-CO-GonzaloNNeural")
+            await comm.save(tmp.name)
+            with open(tmp.name, "rb") as f:
+                return f.read()
+        return asyncio.run(edge())
+    except:
+        # Fallback: gTTS
+        from gtts import gTTS
+        tts = gTTS(text=texto, lang="es", slow=False)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        return buf.read()
 
 def preguntar(prompt):
     resp = deepseek.chat.completions.create(
@@ -48,29 +59,27 @@ def preguntar(prompt):
     )
     return resp.choices[0].message.content
 
-# ── Explicación ──
+# ── Explicación + Audio ──
 col_a, col_b = st.columns(2)
 if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
     with st.spinner("Pensando..."):
         prompt = f"Hola {nombre} de {edad} anios. Explica el tema '{tema}' de {materia} de forma SUPER SENCILLA, como si hablaras con un nino. Usa ejemplos divertidos, analogias con cosas cotidianas, emojis, maximo 4 parrafos. NO hagas la tarea."
         st.session_state.explicacion = preguntar(prompt)
-        st.session_state.audio_data = None  # Reset para generar nuevo
+        st.session_state.audio_data = None
     st.rerun()
 
 if col_b.button("🔊 Escuchar", use_container_width=True, disabled=not st.session_state.explicacion):
     with st.spinner("Generando voz..."):
-        st.session_state.audio_data = asyncio.run(generar_audio(st.session_state.explicacion))
+        st.session_state.audio_data = generar_audio(st.session_state.explicacion)
     st.rerun()
 
 if st.session_state.explicacion:
     st.success(f"📖 {nombre}, aqui va:")
     st.markdown(st.session_state.explicacion)
-    
     if st.session_state.audio_data:
         st.audio(st.session_state.audio_data, format="audio/mp3")
-        st.caption("🎧 Voz: Gonzalo (Colombia)")
 
-# ── Preguntas del niño ──
+# ── Preguntas ──
 if st.session_state.explicacion:
     st.divider()
     st.subheader("💬 ¿Tienes dudas?")
@@ -79,7 +88,6 @@ if st.session_state.explicacion:
         prompt = f"{nombre} ({edad} anios) pregunta sobre '{tema}': {duda}. Responde super simple, un solo parrafo, con un ejemplo concreto."
         st.info(preguntar(prompt))
 
-    # ── Quiz ──
     st.divider()
     st.subheader("🏆 ¡Demuestra lo que aprendiste!")
     if st.button("🚀 ¡Quiero el reto!", use_container_width=True):
@@ -117,12 +125,11 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
             st.markdown(f"{icono} **{pregunta}** — {mensaje}")
         
         if correctas < 5:
-            st.divider()
-            st.subheader("📚 Refuerzo Personalizado")
+            st.divider(); st.subheader("📚 Refuerzo Personalizado")
             with st.spinner("Preparando..."):
                 fallos = [r[1] for r in resultados if r[0]=="❌"]
-                prompt = f"Un nino de {edad} anios fallo estas preguntas sobre '{tema}':\n" + "\n".join(f"- {f}" for f in fallos) + "\n\nExplica esos conceptos de forma MUY SENCILLA, 2 parrafos por concepto, con ejemplos divertidos."
+                prompt = f"Un nino de {edad} anios fallo estas preguntas sobre '{tema}':\n" + "\n".join(f"- {f}" for f in fallos) + "\n\nExplica de forma MUY SENCILLA, 2 parrafos por concepto, con ejemplos divertidos."
                 st.info(preguntar(prompt))
 
 st.divider()
-st.caption("🤖 IAprendo v3.2 — Hermes + DeepSeek + EdgeTTS | 2026")
+st.caption("🤖 IAprendo v3.3 — Hermes + DeepSeek | 2026")
