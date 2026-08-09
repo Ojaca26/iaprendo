@@ -1,8 +1,7 @@
-# IAprendo v5.0 — audio SIEMPRE acelerado 1.5x real (static-ffmpeg)
+# IAprendo v5.1 — audio SIEMPRE 1.5x real (PyAV/FFmpeg embebido) + quiz robusto
 import streamlit as st
 from openai import OpenAI
 import io, os, asyncio, tempfile, json, re
-
 st.set_page_config(page_title="IAprendo", page_icon="🤖", layout="centered")
 
 deepseek = OpenAI(
@@ -43,6 +42,45 @@ def limpiar_para_voz(texto):
     t = re.sub(r'\s{2,}', ' ', t)
     return t.strip()
 
+def acelerar_audio_pyav(ruta_in, ruta_out, factor="1.5"):
+    """Acelera un MP3 con FFmpeg embebido (PyAV). Funciona en Streamlit Cloud sin binarios externos."""
+    import av
+    inp = av.open(ruta_in)
+    astream = inp.streams.audio[0]
+    g = av.filter.Graph()
+    src = g.add_abuffer(template=astream)
+    atempo = g.add('atempo', factor)
+    snk = g.add('abuffersink')
+    src.link_to(atempo)
+    atempo.link_to(snk)
+    g.configure()
+    out = av.open(ruta_out, 'w')
+    ost = out.add_stream('mp3', rate=astream.codec_context.sample_rate)
+    ost.layout = 'mono'
+    ost.format = 's16p'
+    def drain():
+        frames = []
+        while True:
+            try:
+                frames.append(g.pull())
+            except (av.error.BlockingIOError, StopIteration, av.error.EOFError):
+                break
+        return frames
+    def mux(frames):
+        for f in frames:
+            f.pts = None
+            for p in ost.encode(f):
+                out.mux(p)
+    for frame in inp.decode(audio=0):
+        g.push(frame)
+        mux(drain())
+    g.push(None)
+    mux(drain())
+    for p in ost.encode():
+        out.mux(p)
+    out.close()
+    inp.close()
+
 def generar_audio(texto):
     limpio = limpiar_para_voz(texto)
     tmp_in = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
@@ -64,15 +102,13 @@ def generar_audio(texto):
         buf.seek(0)
         with open(tmp_in.name, "wb") as f:
             f.write(buf.read())
-    # Acelerar SIEMPRE a 1.5x con ffmpeg (static-ffmpeg funciona en la nube)
+    # Acelerar SIEMPRE a 1.5x con FFmpeg embebido (PyAV)
     try:
-        import static_ffmpeg
-        static_ffmpeg.add_paths()
+        acelerar_audio_pyav(tmp_in.name, tmp_out.name, "1.5")
+        if not os.path.exists(tmp_out.name) or os.path.getsize(tmp_out.name) == 0:
+            raise RuntimeError("audio vacio")
     except Exception:
-        pass
-    r = os.system(f'ffmpeg -y -i "{tmp_in.name}" -filter:a "atempo=1.5" -vn "{tmp_out.name}" 2>/dev/null')
-    if r != 0 or not os.path.exists(tmp_out.name) or os.path.getsize(tmp_out.name) == 0:
-        # Si ffmpeg falla, devolver el audio normal (mejor que nada)
+        # Si PyAV falla, devolver el audio normal (mejor que nada)
         os.rename(tmp_in.name, tmp_out.name)
     with open(tmp_out.name, "rb") as f:
         data = f.read()
@@ -125,9 +161,29 @@ if st.session_state.explicacion:
             try:
                 txt = preguntar(prompt)
                 if "```" in txt: txt = txt.split("```")[1].replace("json","").strip()
-                st.session_state.preguntas = json.loads(txt)
-                st.session_state.respuestas = [None]*5
-                st.session_state.quiz_ready = True
+                datos = json.loads(txt)
+                # Normalizar: puede venir como lista o dict con clave 'preguntas'
+                if isinstance(datos, dict):
+                    datos = datos.get("preguntas") or datos.get("questions") or list(datos.values())
+                preguntas = []
+                for q in datos:
+                    if isinstance(q, str):
+                        continue
+                    pregunta = q.get("pregunta") or q.get("question") or ""
+                    opciones = q.get("opciones") or q.get("options") or []
+                    correcta = q.get("correcta") or q.get("answer") or q.get("correct") or ""
+                    # Si la correcta viene marcada con * dentro de las opciones
+                    if not correcta:
+                        for op in opciones:
+                            if isinstance(op, str) and "*" in op:
+                                correcta = op.replace("*", "").strip()
+                                break
+                    opciones = [str(op).replace("*", "").strip() for op in opciones]
+                    if pregunta and opciones:
+                        preguntas.append({"pregunta": pregunta, "opciones": opciones, "correcta": str(correcta).strip()})
+                st.session_state.preguntas = preguntas
+                st.session_state.respuestas = [None]*len(preguntas)
+                st.session_state.quiz_ready = bool(preguntas)
             except:
                 st.error("Error. Intenta de nuevo.")
                 st.session_state.quiz_ready = False
@@ -139,14 +195,36 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
         st.session_state.respuestas[i] = st.radio("Selecciona:", q['opciones'], key=f"q_{i}", index=None)
     
     if st.button("✅ ¡Revisar!", use_container_width=True):
-        correctas = sum(1 for i,q in enumerate(st.session_state.preguntas) if st.session_state.respuestas[i] and st.session_state.respuestas[i].startswith(q['correcta']))
+        def _norm(s):
+            s = s.strip()
+            m = re.match(r'^([A-D])\s*[).:]\s*', s)
+            if m:
+                return m.group(1).upper(), re.sub(r'^[A-D]\s*[).:]\s*', '', s).strip().lower()
+            if len(s) == 1 and s.upper() in "ABCD":
+                return s.upper(), ""
+            return None, s.lower()
+        def es_correcta(i, q):
+            sel = st.session_state.respuestas[i]
+            if not sel: return False
+            c = q['correcta'].strip()
+            sl, stx = _norm(sel)
+            cl, ctx = _norm(c)
+            if cl and sl and cl == sl:
+                return True
+            if cl and not ctx:  # la correcta es solo la letra (ej: "A")
+                return sl == cl
+            if ctx and stx:
+                return stx == ctx or stx.startswith(ctx) or ctx.startswith(stx) or sel.strip() == c
+            return sel.strip() == c
+        correctas = sum(1 for i,q in enumerate(st.session_state.preguntas) if es_correcta(i,q))
         resultados = []
         for i, q in enumerate(st.session_state.preguntas):
-            ok = st.session_state.respuestas[i] and st.session_state.respuestas[i].startswith(q['correcta'])
-            resultados.append(("✅" if ok else "❌", q['pregunta'], "¡Bien!" if ok else f"Era {q['correcta']})"))
+            ok = es_correcta(i,q)
+            resultados.append(( "✅" if ok else "❌", q['pregunta'], "¡Bien!" if ok else f"Era {q['correcta']})"))
         
-        st.markdown(f"## 📊 {correctas}/5")
-        if correctas == 5: st.balloons(); st.success(f"🌟🌟🌟 ¡PERFECTO {nombre}!")
+        total = len(st.session_state.preguntas)
+        st.markdown(f"## 📊 {correctas}/{total}")
+        if correctas == total: st.balloons(); st.success(f"🌟🌟🌟 ¡PERFECTO {nombre}!")
         elif correctas >= 3: st.info(f"🌟 ¡Muy bien {nombre}!")
         else: st.warning(f"💪 A repasar, {nombre}!")
         
@@ -161,4 +239,4 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
                 st.info(preguntar(prompt))
 
 st.divider()
-st.caption("🤖 IAprendo v3.6 — Hermes + DeepSeek | 2026")
+st.caption("🤖 IAprendo v5.1 — Hermes + DeepSeek | 2026")
