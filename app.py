@@ -1,7 +1,7 @@
-# IAprendo v3.3 — DeepSeek + TTS dual (Edge local / gTTS cloud)
+# IAprendo v3.4 — DeepSeek + TTS dual
 import streamlit as st
 from openai import OpenAI
-import io, os, asyncio, tempfile, json
+import io, os, asyncio, tempfile, json, re
 
 st.set_page_config(page_title="IAprendo", page_icon="🤖", layout="centered")
 
@@ -30,22 +30,32 @@ with col2:
 materia = st.selectbox("📘 Materia:", ["Ciencias Naturales","Matematicas","Español","Inglés","Historia","Geografia","Tecnologia","Arte","Musica"])
 tema = st.text_input("🌍 ¿Qué tema quieres aprender hoy?", placeholder="Ej: El sistema solar...")
 
+def limpiar_para_voz(texto):
+    """Quita markdown para que el TTS no lea asteriscos ni símbolos."""
+    texto = re.sub(r'\*\*(.+?)\*\*', r'\1', texto)  # negrita
+    texto = re.sub(r'\*(.+?)\*', r'\1', texto)        # cursiva
+    texto = re.sub(r'`(.+?)`', r'\1', texto)           # código
+    texto = re.sub(r'#+\s*', '', texto)                # headers
+    texto = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', texto)   # links
+    texto = re.sub(r'[▶️🔊🎓🧠📚🏆💬🌍📘👶📖🎧🚀📝✅❌📊🌟💪🤖]', '', texto)
+    texto = re.sub(r'\n{2,}', '. ', texto)              # doble salto → pausa
+    texto = re.sub(r'\n', ' ', texto)                   # saltos simples
+    return texto.strip()
+
 def generar_audio(texto):
-    """Genera audio: prueba Edge TTS, si falla usa gTTS."""
+    texto_limpio = limpiar_para_voz(texto)
     try:
-        # Edge TTS (voz natural colombiana)
         import edge_tts
         async def edge():
             tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-            comm = edge_tts.Communicate(texto, "es-CO-GonzaloNNeural")
+            comm = edge_tts.Communicate(texto_limpio, "es-CO-GonzaloNNeural")
             await comm.save(tmp.name)
             with open(tmp.name, "rb") as f:
                 return f.read()
         return asyncio.run(edge())
     except:
-        # Fallback: gTTS
         from gtts import gTTS
-        tts = gTTS(text=texto, lang="es", slow=False)
+        tts = gTTS(text=texto_limpio, lang="es", slow=False)
         buf = io.BytesIO()
         tts.write_to_fp(buf)
         buf.seek(0)
@@ -59,7 +69,6 @@ def preguntar(prompt):
     )
     return resp.choices[0].message.content
 
-# ── Explicación + Audio ──
 col_a, col_b = st.columns(2)
 if col_a.button("🧠 ¡Explícame!", use_container_width=True) and tema:
     with st.spinner("Pensando..."):
@@ -79,7 +88,6 @@ if st.session_state.explicacion:
     if st.session_state.audio_data:
         st.audio(st.session_state.audio_data, format="audio/mp3")
 
-# ── Preguntas ──
 if st.session_state.explicacion:
     st.divider()
     st.subheader("💬 ¿Tienes dudas?")
@@ -132,4 +140,4 @@ if st.session_state.quiz_ready and st.session_state.preguntas:
                 st.info(preguntar(prompt))
 
 st.divider()
-st.caption("🤖 IAprendo v3.3 — Hermes + DeepSeek | 2026")
+st.caption("🤖 IAprendo v3.4 — Hermes + DeepSeek | 2026")
